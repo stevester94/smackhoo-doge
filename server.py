@@ -5,7 +5,7 @@ import random
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
 import requests
-
+import json
 
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -14,10 +14,21 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-type', 'image/jpeg')
             self.end_headers()
-            image_dir = os.path.join( os.getcwd(), "images" )
-            image_file = random.choice(os.listdir(image_dir))
-            with open(os.path.join(image_dir, image_file), 'rb') as f:
-                self.wfile.write(f.read())
+            response = requests.get('https://dog.ceo/api/breeds/image/random')
+
+            if response.status_code == 200:
+               j = json.loads( response.content )
+               print( j ) 
+
+               response = requests.get( j["message"] )
+               if response.status_code == 200:
+                  image_bytes = response.content
+                  self.wfile.write( image_bytes )
+               else:
+                  print( "error fetching image content" )
+            else:
+               print('Error fetching image url')
+                
         else:
             self.send_error(404)
 
