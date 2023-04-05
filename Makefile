@@ -40,3 +40,6 @@ clean:
 	rm -f .image_marker
 	docker rmi -f ${image_name}
 	docker rmi -f ${registry_url}/${image_name}
+
+run-local: image
+	docker run -t --network=host --rm smackhoo-doge ./server.py 5984
