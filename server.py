@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
 import requests
 import json
+import sys
 
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -33,8 +34,9 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
 def run_server():
-    httpd = HTTPServer(('localhost', 5984), RequestHandler)
-    print('Server running on http://localhost:5984')
+    listenPort = int(sys.argv[1])
+    httpd = HTTPServer(('localhost', listenPort), RequestHandler)
+    print( f'Server running on http://localhost:{listenPort}' )
     httpd.serve_forever()
 
 if __name__ == '__main__':

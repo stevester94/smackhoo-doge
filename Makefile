@@ -1,6 +1,8 @@
 image_name := smackhoo-doge
 registry_url := ssmackey
 
+.PHONY: all image save push
+
 all: image
 
 image: .image_marker
