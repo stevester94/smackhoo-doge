@@ -1,3 +1,6 @@
+# KNOWN PROBLEMS
+# - Breaks when files have spaces in them
+
 image_name := smackhoo-doge
 registry_url := ssmackey
 
