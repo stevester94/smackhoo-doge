@@ -30,15 +30,15 @@ async def handle(request):
         return web.Response(status=404)
 
 async def audio_generator():
-    frequency = 20000  # 10 KHz
+    frequency = 10000  # 10 KHz
     sample_rate = 44100  # CD-quality audio
     amplitude = 1  # Maximum amplitude of 16-bit audio
     duration = 0.5
 
 
     while True:
-        frequency -= 100
-        if frequency < 20: frequency = 20000
+        frequency -= 500
+        if frequency < 20: frequency = 17500
         t = np.linspace(0,duration, int(duration*sample_rate))
         x = amplitude * np.sin(2*np.pi*frequency*t)
         x = x.tolist()
