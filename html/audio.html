@@ -17,6 +17,8 @@
         // this will get updated at every new fetch
         // keep it accessible so we can stop() it
         let active_node;
+        let playing = false;
+        let audioData;
 
         var ws = new WebSocket('ws://localhost:5984/noise');
         ws.binaryType = "arraybuffer";
@@ -38,9 +40,39 @@
             return buffer;
         }
 
+        function concatFloat32Arrays( arr1, arr2 ) {
+            if( !arr1 || !arr1.length ) {
+                return arr2 && arr2.slice();
+            }
+            if( !arr2 || !arr2.length ) {
+                return arr1 && arr1.slice();
+            }
+            const out = new Float32Array( arr1.length + arr2.length );
+            out.set( arr1 );
+            out.set( arr2, arr1.length );
+            return out;
+        }
+
+        //https://stackoverflow.com/questions/60921018/web-audio-api-efficiently-play-a-pcm-stream
         ws.onmessage = function(event) {
             console.log( "got" )
-            var audioData = new Float32Array(event.data);
+            var recv = new Float32Array(event.data);
+            audioData = recv;
+
+            if(!playing)
+            {
+                play();
+            }
+        }
+
+        function play()
+        {
+            if( audioData.length == 0 )
+            {
+                playing = false;
+                return;
+            }
+            playing = true;
 
             // create a new AudioBuffer
             const aud_buf = ctx.createBuffer( 1, audioData.length, sample_rate );
@@ -53,6 +85,7 @@
             // active_node.buffer = createSineWave( 1, 10000 );
             active_node.connect( gain );
             active_node.start( 0 );
+            active_node.onended = play;
         }
 
     </script>
