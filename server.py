@@ -33,7 +33,7 @@ async def audio_generator():
     frequency = 10000  # 10 KHz
     sample_rate = 44100  # CD-quality audio
     amplitude = 32767  # Maximum amplitude of 16-bit audio
-    duration = 10
+    duration = 5
     t = np.linspace(1,duration, duration*sample_rate)
     x = amplitude * np.sin(2*np.pi*frequency*t)
     x = x.tolist()
