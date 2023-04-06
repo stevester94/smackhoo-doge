@@ -30,17 +30,20 @@ async def handle(request):
         return web.Response(status=404)
 
 async def audio_generator():
-    frequency = 10000  # 10 KHz
+    frequency = 20000  # 10 KHz
     sample_rate = 44100  # CD-quality audio
-    amplitude = 32767/2  # Maximum amplitude of 16-bit audio
-    duration = 5
-    t = np.linspace(1,duration, duration*sample_rate)
-    x = amplitude * np.sin(2*np.pi*frequency*t)
-    x = x.tolist()
-    x = [int(k) for k in x]
-    data = struct.pack('<' + 'h' * len(x), *x)
+    amplitude = 1  # Maximum amplitude of 16-bit audio
+    duration = 0.5
+
 
     while True:
+        frequency -= 100
+        if frequency < 20: frequency = 20000
+        t = np.linspace(0,duration, int(duration*sample_rate))
+        x = amplitude * np.sin(2*np.pi*frequency*t)
+        x = x.tolist()
+        data = struct.pack('<' + 'f' * len(x), *x)
+
         yield data
         await asyncio.sleep(duration)
 

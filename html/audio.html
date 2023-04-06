@@ -5,43 +5,52 @@
 </head>
 <body>
     <script>
-        const min_sample_duration = 2; // sec
         const sample_rate = 44100; // Hz
-        // how much data is needed to play for at least min_sample_duration
-        const min_sample_size = min_sample_duration * sample_rate;
 
         const ctx = new AudioContext();
-        // to control output volume
+
+        // Necessary
         const gain = ctx.createGain();
-        gain.gain.value = 0.01;
+        gain.gain.value = 1.0;
         gain.connect( ctx.destination );
+
         // this will get updated at every new fetch
-        let fetched_data  = new Float32Array( 0 );
         // keep it accessible so we can stop() it
         let active_node;
 
         var ws = new WebSocket('ws://localhost:5984/noise');
         ws.binaryType = "arraybuffer";
 
-        ws.onmessage = function(event) {
-            console.log( "got" )
-            var audioData = new Int16Array(event.data);
-            fetched_data = Float32Array.from(audioData);
-            readingLoop();
+        function createSineWave(T, F) {
+            const audioContext = new AudioContext();
+            const sampleRate = audioContext.sampleRate;
+            const numSamples = T * sampleRate;
+            const buffer = audioContext.createBuffer(1, numSamples, sampleRate);
+            const channelData = buffer.getChannelData(0);
+            const amplitude = 1.0;
+
+            for (let i = 0; i < numSamples; i++) {
+                const t = i / sampleRate;
+                const value = amplitude * Math.sin(2 * Math.PI * F * t);
+                channelData[i] = value;
+            }
+
+            return buffer;
         }
 
-        function readingLoop() {
-            // create a new AudioBuffer
-            const aud_buf = ctx.createBuffer( 1, fetched_data.length, sample_rate );
-            // copy our fetched data to its first channel
-            aud_buf.copyToChannel( fetched_data, 0 );
+        ws.onmessage = function(event) {
+            console.log( "got" )
+            var audioData = new Float32Array(event.data);
 
-            // clear the buffered data
-            fetched_data = new Float32Array( 0 );
-            
+            // create a new AudioBuffer
+            const aud_buf = ctx.createBuffer( 1, audioData.length, sample_rate );
+            // copy our fetched data to its first channel
+            aud_buf.copyToChannel( audioData, 0 );
+
             // the actual player
             active_node = ctx.createBufferSource();
             active_node.buffer = aud_buf;
+            // active_node.buffer = createSineWave( 1, 10000 );
             active_node.connect( gain );
             active_node.start( 0 );
         }
