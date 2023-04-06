@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Audio Stream</title>
+</head>
+<body>
+    <audio id="player" controls autoplay></audio>
+    <script>
+        var ws = new WebSocket('ws://localhost:5984/');
+        ws.binaryType = "arraybuffer";
+        ws.onmessage = function(event) {
+            var audioData = new Uint8Array(event.data);
+            var player = document.getElementById("player");
+            var blob = new Blob([audioData], {type: 'audio/mp3'});
+            var audioURL = window.URL.createObjectURL(blob);
+            player.src = audioURL;
+        }
+    </script>
+</body>
+</html>

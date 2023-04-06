@@ -1,71 +1,94 @@
 #! /usr/bin/env python3
 
-import os
-import random
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse
-import requests
-import json
-import sys
+import http.server
+import socketserver
+import logging
+import websocket
+import select
+import os 
 
-DIR = os.path.join( os.getcwd(), "html" )
+PORT = 5984
 
-class RequestHandler(BaseHTTPRequestHandler):
-    def do_local_GET(self):
-        try:
-            # Get the absolute path of the requested file
-            abs_path = os.path.abspath(DIR + self.path)
+# Disable HTTP server logging messages
+logging.getLogger().setLevel(logging.ERROR)
 
-            print( abs_path )
-            
-            # If the requested path is a directory, try to serve index.html
-            if os.path.isdir(abs_path):
-                abs_path = os.path.abspath(os.path.join(abs_path, "index.html"))
+HTML_DIR = os.path.join( os.getcwd(), "html" )
 
-            # If the file exists, serve it
-            if os.path.isfile(abs_path):
-                with open(abs_path, 'rb') as file:
-                    self.send_response(200)
-                    self.send_header('Content-type', 'text/html')
-                    self.end_headers()
-                    self.wfile.write(file.read())
-            # Otherwise, return a 404 error
-            else:
-                self.send_error(404, 'File not found')
-        except Exception as e:
-            self.send_error(500, str(e))
+print( "smegmag", HTML_DIR )
 
-    def do_GET_api_doge( self ):
-        self.send_response(200)
-        self.send_header('Content-type', 'image/jpeg')
-        self.end_headers()
-        response = requests.get('https://dog.ceo/api/breeds/image/random')
+class WebSocketHandler(websocket.WebSocket):
+    def __init__(self, sock):
+        super().__init__(sock)
+        self.request = None
+    
+    def fileno(self):
+        return self.sock.fileno()
+    
+    def set_request(self, request):
+        self.request = request
+    
+    def send(self, data):
+        # WebSocket send method
+        return super().send(data, opcode=websocket.ABNF.OPCODE_BINARY)
 
-        if response.status_code == 200:
-            j = json.loads( response.content )
-            print( j ) 
-
-            response = requests.get( j["message"] )
-            if response.status_code == 200:
-                image_bytes = response.content
-                self.wfile.write( image_bytes )
-            else:
-                print( "error fetching image content" )
-        else:
-            print('Error fetching image url')
-
+class RequestHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        parsed_path = urlparse(self.path)
-        if parsed_path.path == '/api/doge':
-            self.do_GET_api_doge()
+        if hasattr( self, "headers" ):
+            if self.headers.get('Upgrade', '').lower() == 'websocket':
+                self.handle_websocket()
+
+        absPath = os.path.abspath( HTML_DIR + self.path )
+
+        if os.path.isdir(absPath):
+            absPath = os.path.abspath(os.path.join(absPath, "index.html"))
+        self.path = absPath
+
+        # If the file exists, serve it
+        if os.path.isfile(absPath):
+            with open(absPath, 'rb') as file:
+                self.send_response(200)
+                self.send_header('Content-type', 'text/html')
+                self.end_headers()
+                self.wfile.write(file.read())
+        # Otherwise, return a 404 error
         else:
-            self.do_local_GET()
+            self.send_error(404, 'File not found')
 
-def run_server():
-    listenPort = int(sys.argv[1])
-    httpd = HTTPServer(('localhost', listenPort), RequestHandler)
-    print( f'Server running on http://localhost:{listenPort}' )
-    httpd.serve_forever()
+    def handle_websocket(self):
+        print( "Handling a websocket" )
+        ws = self.websocket = WebSocketHandler(sock=self.request)
+        ws.set_request(self)
+        # Notify server that a new WebSocket connection has been established
+        self.server.websocket_handlers.append(ws)
+        
+        while True:
+            # Check if the WebSocket is closed
+            if ws.closed:
+                break
+            
+            # Use select to check if there is any data available to read
+            r, _, _ = select.select([ws], [], [], 1)
+            if r:
+                data = ws.recv()
+                # Notify server that new data has been received
+                self.server.handle_websocket_data(self, data)
 
-if __name__ == '__main__':
-    run_server()
+        # Notify server that the WebSocket connection has been closed
+        self.server.websocket_handlers.remove(ws)
+
+
+class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    def __init__(self, server_address, RequestHandlerClass):
+        self.websocket_handlers = []
+        super().__init__(server_address, RequestHandlerClass)
+
+    def handle_websocket_data(self, request_handler, data):
+        # Broadcast the received data to all connected WebSocket clients
+        for handler in self.websocket_handlers:
+            if handler is not request_handler:
+                handler.send(data)
+
+# Create server and start serving
+httpd = Server(('localhost', PORT), RequestHandler)
+print(f"Server started at http://localhost:{PORT}")
+httpd.serve_forever()
