@@ -1,2 +1,4 @@
 requests==2.28.2
-websocket
+websockets
+aiohttp
+asyncio

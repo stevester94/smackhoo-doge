@@ -1,94 +1,60 @@
 #! /usr/bin/env python3
+import os
+import sys
 
-import http.server
-import socketserver
-import logging
-import websocket
-import select
-import os 
+import asyncio
+from aiohttp import web
+import mimetypes
+import math
+import struct
 
-PORT = 5984
-
-# Disable HTTP server logging messages
-logging.getLogger().setLevel(logging.ERROR)
 
 HTML_DIR = os.path.join( os.getcwd(), "html" )
 
-print( "smegmag", HTML_DIR )
+async def handle(request):
+    path = request.path
+    absPath = os.path.abspath( HTML_DIR + path )
+    if os.path.isdir(absPath):
+        absPath = os.path.abspath(os.path.join(absPath, "index.html"))
 
-class WebSocketHandler(websocket.WebSocket):
-    def __init__(self, sock):
-        super().__init__(sock)
-        self.request = None
+    try:
+        with open(absPath, 'rb') as f:
+            content = f.read()
+        content_type, _ = mimetypes.guess_type(absPath)
+        if content_type == 'text/html':
+            headers = {'Content-Type': 'text/html'}
+            headers['Content-Type'] += '; charset=utf-8'
+        return web.Response(body=content, headers=headers)
+    except FileNotFoundError:
+        return web.Response(status=404)
+
+async def audio_generator():
+    frequency = 10000  # 10 KHz
+    sample_rate = 44100  # CD-quality audio
+    amplitude = 32767  # Maximum amplitude of 16-bit audio
+    period = sample_rate / frequency
+    values = []
+    for i in range(int(period)):
+        value = int(amplitude * math.sin((2 * math.pi / period) * i))
+        values.append(value)
+    data = struct.pack('<' + 'h' * len(values), *values)
+    while True:
+        yield data
+        await asyncio.sleep(1/sample_rate)
+
+async def wshandle(request):
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    async for audio_data in audio_generator():
+        await ws.send(audio_data, binary=True)
     
-    def fileno(self):
-        return self.sock.fileno()
-    
-    def set_request(self, request):
-        self.request = request
-    
-    def send(self, data):
-        # WebSocket send method
-        return super().send(data, opcode=websocket.ABNF.OPCODE_BINARY)
+    return ws
 
-class RequestHandler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        if hasattr( self, "headers" ):
-            if self.headers.get('Upgrade', '').lower() == 'websocket':
-                self.handle_websocket()
+app = web.Application()
+app.add_routes([
+    web.get('/{tail:.*}', handle),
+    web.get('/noise', wshandle),
+])
 
-        absPath = os.path.abspath( HTML_DIR + self.path )
-
-        if os.path.isdir(absPath):
-            absPath = os.path.abspath(os.path.join(absPath, "index.html"))
-        self.path = absPath
-
-        # If the file exists, serve it
-        if os.path.isfile(absPath):
-            with open(absPath, 'rb') as file:
-                self.send_response(200)
-                self.send_header('Content-type', 'text/html')
-                self.end_headers()
-                self.wfile.write(file.read())
-        # Otherwise, return a 404 error
-        else:
-            self.send_error(404, 'File not found')
-
-    def handle_websocket(self):
-        print( "Handling a websocket" )
-        ws = self.websocket = WebSocketHandler(sock=self.request)
-        ws.set_request(self)
-        # Notify server that a new WebSocket connection has been established
-        self.server.websocket_handlers.append(ws)
-        
-        while True:
-            # Check if the WebSocket is closed
-            if ws.closed:
-                break
-            
-            # Use select to check if there is any data available to read
-            r, _, _ = select.select([ws], [], [], 1)
-            if r:
-                data = ws.recv()
-                # Notify server that new data has been received
-                self.server.handle_websocket_data(self, data)
-
-        # Notify server that the WebSocket connection has been closed
-        self.server.websocket_handlers.remove(ws)
-
-
-class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
-    def __init__(self, server_address, RequestHandlerClass):
-        self.websocket_handlers = []
-        super().__init__(server_address, RequestHandlerClass)
-
-    def handle_websocket_data(self, request_handler, data):
-        # Broadcast the received data to all connected WebSocket clients
-        for handler in self.websocket_handlers:
-            if handler is not request_handler:
-                handler.send(data)
-
-# Create server and start serving
-httpd = Server(('localhost', PORT), RequestHandler)
-print(f"Server started at http://localhost:{PORT}")
-httpd.serve_forever()
+if __name__ == '__main__':
+    web.run_app(app, port=int(sys.argv[1]) )
