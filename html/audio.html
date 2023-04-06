@@ -4,38 +4,12 @@
     <title>Audio Stream</title>
 </head>
 <body>
-    <button id="btn">start</button>
-    <pre id="log"></pre>
-    
-    <div>
-    <label>Output volume:<input type="range" name="volume" min="0" max="0.5" step="0.01" value="0.01"></label>
-    </div>
-    <div>
-    Size of each chunk fetched:
-      <label><input type="radio" name="chunk-size" value="2048" checked>2048 bytes (OP's current)</label>
-      <label><input type="radio" name="chunk-size" value="35280">35280 bytes (barely enough for 0.1s interval)</label>
-      <label><input type="radio" name="chunk-size" value="44100">44100 bytes (enough for 0.1s interval)</label>
-    </div>
-
     <script>
         const min_sample_duration = 2; // sec
-        const sample_rate = 88200; // Hz
+        const sample_rate = 44100; // Hz
         // how much data is needed to play for at least min_sample_duration
         const min_sample_size = min_sample_duration * sample_rate;
 
-        const fetching_interval = 100; // ms
-
-        // you'll probably want this much bigger
-        let chunk_size = 2048; // bytes
-
-        const log = document.getElementById( 'log' );
-        const btn = document.getElementById( 'btn' );
-
-        btn.onclick = e => {
-
-        let stopped = false;
-        let is_reading = false;
-        
         const ctx = new AudioContext();
         // to control output volume
         const gain = ctx.createGain();
@@ -51,28 +25,12 @@
 
         ws.onmessage = function(event) {
             console.log( "got" )
-            var audioData = new Uint8Array(event.data);
+            var audioData = new Int16Array(event.data);
             fetched_data = Float32Array.from(audioData);
             readingLoop();
         }
 
-        // UI update
-        btn.textContent = "stop";
-        btn.onclick = e => {
-            stopped = true;
-            if( active_node ) { active_node.stop(0); }
-        };
-        oninput = handleUIEvents;
-
-
         function readingLoop() {
-        
-            if( stopped  || fetched_data.length < min_sample_size ) {
-            is_reading = false;
-            return;
-            }
-            // let the world know we are actively reading
-            is_reading = true;
             // create a new AudioBuffer
             const aud_buf = ctx.createBuffer( 1, fetched_data.length, sample_rate );
             // copy our fetched data to its first channel
@@ -84,42 +42,10 @@
             // the actual player
             active_node = ctx.createBufferSource();
             active_node.buffer = aud_buf;
-            active_node.onended = readingLoop; // in case we buffered enough while playing
             active_node.connect( gain );
             active_node.start( 0 );
-
         }
 
-        function handleUIEvents( evt ) {
-
-            const type = evt.target.name;
-            const value = evt.target.value;
-            switch( type ) {
-            case "chunk-size":
-                chunk_size = +value;
-                break;
-            case "volume":
-                gain.gain.value = +value;
-                break;
-            }
-
-        }
-
-        };
-
-        // helpers
-        function concatFloat32Arrays( arr1, arr2 ) {
-        if( !arr1 || !arr1.length ) {
-            return arr2 && arr2.slice();
-        }
-        if( !arr2 || !arr2.length ) {
-            return arr1 && arr1.slice();
-        }
-        const out = new Float32Array( arr1.length + arr2.length );
-        out.set( arr1 );
-        out.set( arr2, arr1.length );
-        return out;
-        }
     </script>
 </body>
 </html>
