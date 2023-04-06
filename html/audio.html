@@ -6,9 +6,10 @@
 <body>
     <audio id="player" controls autoplay></audio>
     <script>
-        var ws = new WebSocket('ws://localhost:5984/fuck');
+        var ws = new WebSocket('ws://localhost:5984/noise');
         ws.binaryType = "arraybuffer";
         ws.onmessage = function(event) {
+            console.log( "got" )
             var audioData = new Uint8Array(event.data);
             var player = document.getElementById("player");
             var blob = new Blob([audioData], {type: 'audio/mp3'});

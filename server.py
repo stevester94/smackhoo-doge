@@ -7,7 +7,8 @@ from aiohttp import web
 import mimetypes
 import math
 import struct
-
+import logging
+import numpy as np
 
 HTML_DIR = os.path.join( os.getcwd(), "html" )
 
@@ -32,29 +33,31 @@ async def audio_generator():
     frequency = 10000  # 10 KHz
     sample_rate = 44100  # CD-quality audio
     amplitude = 32767  # Maximum amplitude of 16-bit audio
-    period = sample_rate / frequency
-    values = []
-    for i in range(int(period)):
-        value = int(amplitude * math.sin((2 * math.pi / period) * i))
-        values.append(value)
-    data = struct.pack('<' + 'h' * len(values), *values)
+    duration = 10
+    t = np.linspace(1,duration, duration*sample_rate)
+    x = amplitude * np.sin(2*np.pi*frequency*t)
+    x = x.tolist()
+    x = [int(k) for k in x]
+    data = struct.pack('<' + 'h' * len(x), *x)
+
     while True:
         yield data
-        await asyncio.sleep(1/sample_rate)
+        await asyncio.sleep(duration)
 
 async def wshandle(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     async for audio_data in audio_generator():
-        await ws.send(audio_data, binary=True)
+        await ws.send_bytes(audio_data)
     
     return ws
 
 app = web.Application()
 app.add_routes([
-    web.get('/{tail:.*}', handle),
     web.get('/noise', wshandle),
+    web.get('/{tail:.*}', handle),
 ])
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.DEBUG)
     web.run_app(app, port=int(sys.argv[1]) )
