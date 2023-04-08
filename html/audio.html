@@ -22,15 +22,17 @@
         let playing = false;
         let audioData;
         let clickedAlready = false;
+        let ws;
 
-        var ws = new WebSocket('ws://localhost:5984/noise');
-        ws.binaryType = "arraybuffer";
 
         const btn = document.getElementById( 'btn' );
 
         btn.onclick = e => {
             if(!clickedAlready)
             {
+                ws = new WebSocket("wss://" + location.host + "/noise"); // Already has port in the host portion
+                ws.binaryType = "arraybuffer";
+
                 clickedAlready = true;
                 ws.onmessage = function(event) {
                     console.log( "got" )
