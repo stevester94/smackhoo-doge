@@ -4,6 +4,8 @@
     <title>Audio Stream</title>
 </head>
 <body>
+    <button id="btn">start</button>
+
     <script>
         const sample_rate = 44100; // Hz
 
@@ -19,9 +21,33 @@
         let active_node;
         let playing = false;
         let audioData;
+        let clickedAlready = false;
 
         var ws = new WebSocket('ws://localhost:5984/noise');
         ws.binaryType = "arraybuffer";
+
+        const btn = document.getElementById( 'btn' );
+
+        btn.onclick = e => {
+            if(!clickedAlready)
+            {
+                clickedAlready = true;
+                ws.onmessage = function(event) {
+                    console.log( "got" )
+                    audioData = new Float32Array(event.data);
+
+                    if(!playing)
+                    {
+                        console.log( "Calling play in onmessage" )
+                        play();
+                    }
+                    else
+                    {
+                        console.log( "NOT calling play" )
+                    }
+                }
+            }
+        }
 
         function createSineWave(T, F) {
             const audioContext = new AudioContext();
@@ -54,30 +80,23 @@
         }
 
         //https://stackoverflow.com/questions/60921018/web-audio-api-efficiently-play-a-pcm-stream
-        ws.onmessage = function(event) {
-            console.log( "got" )
-            var recv = new Float32Array(event.data);
-            audioData = recv;
 
-            if(!playing)
-            {
-                play();
-            }
-        }
 
         function play()
         {
+            console.log( "play" )
             if( audioData.length == 0 )
             {
                 playing = false;
                 return;
             }
             playing = true;
-
+            
             // create a new AudioBuffer
             const aud_buf = ctx.createBuffer( 1, audioData.length, sample_rate );
             // copy our fetched data to its first channel
             aud_buf.copyToChannel( audioData, 0 );
+            audioData = new Float32Array(0);
 
             // the actual player
             active_node = ctx.createBufferSource();
@@ -85,7 +104,12 @@
             // active_node.buffer = createSineWave( 1, 10000 );
             active_node.connect( gain );
             active_node.start( 0 );
-            active_node.onended = play;
+            
+            console.log( "Setting event handler" );
+            active_node.addEventListener("ended", () => {
+                console.log(" Event!" );
+                play();
+            });
         }
 
     </script>

@@ -37,7 +37,7 @@ async def audio_generator():
 
 
     while True:
-        frequency -= 500
+        # frequency -= 500
         if frequency < 20: frequency = 17500
         t = np.linspace(0,duration, int(duration*sample_rate))
         x = amplitude * np.sin(2*np.pi*frequency*t)
