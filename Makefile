@@ -1,23 +1,38 @@
 # KNOWN PROBLEMS
 # - Breaks when files have spaces in them
+# - Doesn't ignore files in the dockerignore if they are added or deleted
 
 image_name := smackhoo-doge
 registry_url := ssmackey
+prod_container_name := doge-prod
 
 .PHONY: all image save push
 
-all: image
-
 image: .image_marker
 
-# This madness finds all files/dirs in top level directory, and does a diff with the files that were saved
-# into .image_marker from the previous build. If there are any differences in files then it will touch the Makefile
-# which will force this rule to trigger since the Makefile will be newer than the .image_marker
+# Modify Me!
+run-local: image
+	docker run -t --rm -p5984:5984 ${image_name} ./server.py 5984
+
+# Modify Me!
+run-prod: image push
+	ssh dev.ssmackey.com "docker kill doge-prod"
+	ssh dev.ssmackey.com "docker rm doge-prod"
+	ssh dev.ssmackey.com "docker pull ${registry_url}/${image_name}"
+	ssh dev.ssmackey.com "docker run --name doge-prod -td --network=host --restart always ${registry_url}/${image_name} ./server.py 5984"
+
+# What this madness does:
 #
-# It will also print all files in current directory, ignoring any files that exist in .dockerignore
+# .image_marker: A listing of files that were used for the previous build (this hangs around but should not be checked in)
+# .thisFileWillNeverExistEver: A temporary listing of current files
 #
-# Note this is actually subtly broken; we want to ignore files in the .dockerignore during our comparison as well.
-# It's good enough for now, but when we need this feature it shouldn't be too hard to implement
+# The two files will be compared. If there are any differences in the files (IE a file was deleted or added), the script
+# will touch the Makefile (this is important in the next step)
+# .thisFileWillNeverExistEver is then deleted (it's no longer needed)
+#
+# In the second step of the script, all files that aren't in dockerignore are found, and used as the pre-reqs for .image_marker
+# If any files are newer than .image_marker the recipe will be invoked.
+# If the makefile was touched in the first step, the recipe will be invoked.
 .image_marker: $(shell find . -mindepth 1 | grep -v .thisFileWillNeverExistEver > .thisFileWillNeverExistEver; \
 	if ! cmp -s .thisFileWillNeverExistEver .image_marker; then \
 		touch Makefile; \
@@ -43,6 +58,3 @@ clean:
 	rm -f .image_marker
 	docker rmi -f ${image_name}
 	docker rmi -f ${registry_url}/${image_name}
-
-run-local: image
-	docker run -t --network=host --rm smackhoo-doge ./server.py 5984
