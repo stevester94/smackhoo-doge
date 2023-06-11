@@ -1,5 +1,5 @@
-requests==2.28.2
-websockets
-aiohttp
-asyncio
 numpy
+scipy
+aiohttp
+aiortc
+opencv-python

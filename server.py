@@ -1,66 +1,182 @@
 #! /usr/bin/env python3
-import os
-import sys
 
+import argparse
 import asyncio
-from aiohttp import web
-import mimetypes
+import logging
 import math
 import struct
-import logging
-import numpy as np
+import json
+import fractions
+import time
+import os
+import mimetypes
 
-HTML_DIR = os.path.join( os.getcwd(), "html" )
+from aiohttp import web
+from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc.contrib.media import MediaStreamTrack
+from av import AudioFrame
+import numpy as np
+from utils import UltraSigGen
+
+# Create a class for an audio track
+class AudioStreamTrack(MediaStreamTrack):
+    kind = "audio"
+
+    def __init__(self):
+        super().__init__()
+        self.time = 0
+        self.audioGen = UltraSigGen( 10e3, 48000 )
+        self.samplerate = 48000
+        self.samples = 960 # Num to get each buffer
+
+
+    async def recv(self):
+
+        # Handle timestamps properly
+        if hasattr(self, "_timestamp"):
+            self._timestamp += self.samples
+            wait = self._start + (self._timestamp / self.samplerate) - time.time()
+            await asyncio.sleep(wait)
+        else:
+            self._start = time.time()
+            self._timestamp = 0
+
+        # create empty data by default
+        # data = np.zeros(self.samples).astype(np.int16)
+        data = self.audioGen.get( self.samples )
+        data *= 32000
+        data = data.astype( np.int16 )
+
+        # Only get speaker data if we have some in the buffer
+        # <sig gen here>
+
+        # To convert to a mono audio frame, we need the array to be an array of single-value arrays for each sample (annoying)
+        data = data.reshape(data.shape[0], -1).T
+        # Create audio frame
+        frame = AudioFrame.from_ndarray(data, format='s16', layout='mono')
+
+        # Update time stuff
+        frame.pts = self._timestamp
+        frame.sample_rate = self.samplerate
+        frame.time_base = fractions.Fraction(1, self.samplerate)
+
+        # Return
+        return frame
+
+
+# Create a signaling server using aiohttp
+async def websocket_handler(request):
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+
+    # Create a peer connection
+    pc = RTCPeerConnection()
+
+    # Add the audio track to the peer connection
+    audioTrack = AudioStreamTrack() 
+    pc.addTrack( audioTrack )
+
+    # This basically contains the entire RTC dance
+    async def send_answer():
+        # Create the session description
+        recv = json.loads( await ws.receive_str() )
+        description = RTCSessionDescription(sdp=recv["sdp"], type="offer")
+
+        await pc.setRemoteDescription(description)
+
+        # Generate the answer
+        ans = await pc.createAnswer()
+        await pc.setLocalDescription( ans )
+
+        # Send the answer
+        payload = {
+            "type": pc.localDescription.type,
+            "sdp": pc.localDescription.sdp
+        }
+        payload = json.dumps( payload )
+        await ws.send_str( payload )
+
+    # Handle signaling messages
+    async for msg in ws:
+        if msg.type == web.WSMsgType.TEXT:
+            if msg.data == "offer":
+                await send_answer()
+            elif msg.data == "close":
+                await ws.close()
+            else:
+                try:
+                    j = json.loads(msg.data)
+                except Exception as e:
+                    logging.error( f"Got a malformed WS payload: {msg.data}")
+                    continue
+                else:
+                    if "cmd" in j:
+                        logging.info( f"Got command: {j}" )
+                        if j["cmd"] == "increaseFrequency":
+                            curFreq_Hz = audioTrack.audioGen.getFrequency_Hz()
+                            newFreq_Hz = curFreq_Hz + j["amountHz"]
+                                                        
+                            logging.info( f"Increasing frequency from {curFreq_Hz} to {newFreq_Hz}")
+                            audioTrack.audioGen.setFrequency_Hz(newFreq_Hz)
+
+                            
+                    else:
+                        logging.warning( f"Not sure what to do with: {j}" )
+                    
+                
+
+        elif msg.type == web.WSMsgType.ERROR:
+            logging.error('Websocket connection closed with exception %s' % ws.exception())
+
+    return ws
+
+ROOT = "./html"
 
 async def handle(request):
+    logging.info( f"handle() called with request: {request}" )
     path = request.path
-    absPath = os.path.abspath( HTML_DIR + path )
+    absPath = os.path.abspath( ROOT + path )
+
+    # If is directory, get index.html in that dir
     if os.path.isdir(absPath):
         absPath = os.path.abspath(os.path.join(absPath, "index.html"))
 
     try:
+        logging.info( f"Opening {absPath}" )
         with open(absPath, 'rb') as f:
             content = f.read()
         content_type, _ = mimetypes.guess_type(absPath)
         if content_type == 'text/html':
             headers = {'Content-Type': 'text/html'}
             headers['Content-Type'] += '; charset=utf-8'
+        elif content_type == "text/javascript":
+            headers = {'Content-Type': 'text/javascript'}
+            headers['Content-Type'] += '; charset=utf-8'
+        elif content_type == "application/javascript":
+            headers = {'Content-Type': 'application/javascript'}
+            headers['Content-Type'] += '; charset=utf-8'
+        else:
+            logging.warning( f"Guessed an unknown mimetype: {content_type}, returning status=500")
+            return web.Response( status=500 )
         return web.Response(body=content, headers=headers)
     except FileNotFoundError:
         return web.Response(status=404)
 
-async def audio_generator():
-    frequency = 10000  # 10 KHz
-    sample_rate = 44100  # CD-quality audio
-    amplitude = 1  # Maximum amplitude of 16-bit audio
-    duration = 0.5
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="WebRTC audio stream backend")
+    parser.add_argument("--port", type=int, default=8080, help="Port for the signaling server")
+    args = parser.parse_args()
 
+    # Set up logging
+    logging.basicConfig(level=logging.INFO)
 
-    while True:
-        # frequency -= 500
-        if frequency < 20: frequency = 17500
-        t = np.linspace(0,duration, int(duration*sample_rate))
-        x = amplitude * np.sin(2*np.pi*frequency*t)
-        x = x.tolist()
-        data = struct.pack('<' + 'f' * len(x), *x)
+    # Create the signaling server
+    app = web.Application()
 
-        yield data
-        await asyncio.sleep(duration)
+    app.add_routes([
+        web.get('/ws', websocket_handler),
+        web.get('/{tail:.*}', handle),
+    ])
 
-async def wshandle(request):
-    ws = web.WebSocketResponse()
-    await ws.prepare(request)
-    async for audio_data in audio_generator():
-        await ws.send_bytes(audio_data)
-    
-    return ws
-
-app = web.Application()
-app.add_routes([
-    web.get('/noise', wshandle),
-    web.get('/{tail:.*}', handle),
-])
-
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
-    web.run_app(app, port=int(sys.argv[1]) )
+    # Start the signaling server
+    web.run_app(app, port=args.port)

@@ -12,14 +12,14 @@ image: .image_marker
 
 # Modify Me!
 run-local: image
-	docker run -t --rm -p5984:5984 ${image_name} ./server.py 5984
+	docker run -t --rm -p5984:5984 ${image_name} ./server.py --port 5984
 
 # Modify Me!
 run-prod: image push
 	-ssh dev.ssmackey.com "docker kill doge-prod"
 	-ssh dev.ssmackey.com "docker rm doge-prod"
 	ssh dev.ssmackey.com "docker pull ${registry_url}/${image_name}"
-	ssh dev.ssmackey.com "docker run --name doge-prod -td --network=host --restart always ${registry_url}/${image_name} ./server.py 5984"
+	ssh dev.ssmackey.com "docker run --name doge-prod -td --network=host --restart always ${registry_url}/${image_name} ./server.py --port 5984"
 
 # What this madness does:
 #
