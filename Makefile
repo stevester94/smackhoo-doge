@@ -16,8 +16,8 @@ run-local: image
 
 # Modify Me!
 run-prod: image push
-	ssh dev.ssmackey.com "docker kill doge-prod"
-	ssh dev.ssmackey.com "docker rm doge-prod"
+	ssh dev.ssmackey.com "docker kill -f doge-prod"
+	ssh dev.ssmackey.com "docker rm -f doge-prod"
 	ssh dev.ssmackey.com "docker pull ${registry_url}/${image_name}"
 	ssh dev.ssmackey.com "docker run --name doge-prod -td --network=host --restart always ${registry_url}/${image_name} ./server.py 5984"
 
