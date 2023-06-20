@@ -10,15 +10,32 @@ async function startStreaming() {
     audioPlayer.srcObject = new MediaStream([audioTrack]);
 
     // Connect to the signaling server
-    const signalingUrl = "wss://"+location.host+":5984/ws";
+    const signalingUrl = "wss://"+location.host+"/ws";
     signalingSocket = new WebSocket(signalingUrl);
 
     console.log( "signalingUrl: " + signalingUrl )
 
     signalingSocket.onopen = async () => {
         // Send an offer to the server
-        console.log( "Sending 'offer'" )
+        console.log( "Websocket connected. Sending 'offer', then doing the RTC dance" )
+        
         signalingSocket.send("offer");
+
+        // Listen for ICE candidates and send them to the server
+        pc.onicecandidate = (event) => {
+            console.log( "Got ICE candidate, sending shit to backend" )
+            if (event.candidate) {
+                signalingSocket.send(JSON.stringify({
+                    type: "candidate",
+                    candidate: event.candidate.toJSON()
+                }));
+            }
+        };
+
+        // Create an offer and set it as the local description
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        signalingSocket.send(JSON.stringify(pc.localDescription));
     };
 
     signalingSocket.onmessage = async (event) => {
@@ -38,21 +55,7 @@ async function startStreaming() {
             document.getElementById('audioPlayer').srcObject = evt.streams[0];
     });
 
-    // Listen for ICE candidates and send them to the server
-    pc.onicecandidate = (event) => {
-        console.log( "Got ICE candidate, sending shit to backend" )
-        if (event.candidate) {
-            signalingSocket.send(JSON.stringify({
-                type: "candidate",
-                candidate: event.candidate.toJSON()
-            }));
-        }
-    };
 
-    // Create an offer and set it as the local description
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    signalingSocket.send(JSON.stringify(pc.localDescription));
 }
 
 function stopStreaming() {

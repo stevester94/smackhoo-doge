@@ -31,7 +31,7 @@ class AudioStreamTrack(MediaStreamTrack):
 
 
     async def recv(self):
-
+        logging.info( "recv" )
         # Handle timestamps properly
         if hasattr(self, "_timestamp"):
             self._timestamp += self.samples
@@ -168,7 +168,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Set up logging
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
 
     # Create the signaling server
     app = web.Application()
