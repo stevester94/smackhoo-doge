@@ -1,8 +1,38 @@
 let pc;
-let signalingSocket
+let signalingSocket;
+
+function negotiate() {
+    return pc.createOffer().then(function(offer) {
+        return pc.setLocalDescription(offer);
+    }).then(function() {
+        // wait for ICE gathering to complete
+        return new Promise(function(resolve) {
+            if (pc.iceGatheringState === 'complete') {
+                resolve();
+            } else {
+                function checkState() {
+                    if (pc.iceGatheringState === 'complete') {
+                        pc.removeEventListener('icegatheringstatechange', checkState);
+                        resolve();
+                    }
+                }
+                pc.addEventListener('icegatheringstatechange', checkState);
+            }
+        });
+    }).then(function() {
+        signalingSocket.send(JSON.stringify(pc.localDescription));
+    }).catch(function(e) {
+        alert(e);
+    });
+}
+
 
 async function startStreaming() {
-    pc = new RTCPeerConnection();
+    var config = {
+        sdpSemantics: 'unified-plan',
+        iceServers: [{urls: ['stun:stun.l.google.com:19302']}]
+    };
+    pc = new RTCPeerConnection(config);
 
     // Create an audio track
     const audioTrack = pc.addTransceiver("audio").receiver.track;
@@ -16,26 +46,7 @@ async function startStreaming() {
     console.log( "signalingUrl: " + signalingUrl )
 
     signalingSocket.onopen = async () => {
-        // Send an offer to the server
-        console.log( "Websocket connected. Sending 'offer', then doing the RTC dance" )
-        
-        signalingSocket.send("offer");
-
-        // Listen for ICE candidates and send them to the server
-        pc.onicecandidate = (event) => {
-            console.log( "Got ICE candidate, sending shit to backend" )
-            if (event.candidate) {
-                signalingSocket.send(JSON.stringify({
-                    type: "candidate",
-                    candidate: event.candidate.toJSON()
-                }));
-            }
-        };
-
-        // Create an offer and set it as the local description
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        signalingSocket.send(JSON.stringify(pc.localDescription));
+        negotiate();
     };
 
     signalingSocket.onmessage = async (event) => {
